@@ -1,0 +1,5 @@
+# Core script has no dependencies
+
+# Discord bot (optional)
+discord.py>=2.0
+python-dotenv>=1.0

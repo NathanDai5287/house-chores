@@ -1,0 +1,45 @@
+{
+  "start_date": "2026-01-26",
+  "end_date": "2026-05-15",
+  "tasks": [
+    {
+      "id": "recycling_deliver",
+      "name": "Recycling/Compost (Deliver)",
+      "description": "Takes the compost bin (Green bin) out to the curb on Sunday Night. Takes recycling bins (Blue Bins) out to the curb on Monday Night.",
+      "schedule": "Sunday Night / Monday Night"
+    },
+    {
+      "id": "recycling_return",
+      "name": "Recycling/Compost (Return)",
+      "description": "Takes compost bin (Green bin) from the curb back to rightside of the porch Monday morning. Takes recycling bins (Blue Bins) from the curb next to dumpster at back entrance Tuesday morning.",
+      "schedule": "Monday Morning / Tuesday Morning"
+    },
+    {
+      "id": "kitchen_trash",
+      "name": "Kitchen Trash",
+      "description": "Takes out Kitchen Trash whenever the trash bin is overflowing or close to being full, this person is responsible for replacing the trash bag for next use.",
+      "schedule": "When Trash is Full or Overflowing"
+    },
+    {
+      "id": "dishes",
+      "name": "Dishes Rack",
+      "description": "Takes out dry dishes from the rack and puts them back on the shelves with the corresponding spots for plates, utensils, cabinets.",
+      "schedule": "Sunday and Thursday"
+    },
+    {
+      "id": "doors_compost",
+      "name": "Locked Doors & Compost",
+      "description": "Make sure all doors are locked before going to bed and throws away 2 black compost bags from the backyard.",
+      "schedule": "Every night 11PM + Sat Night"
+    }
+  ],
+  "assignees": [
+    "Charles/Thompson",
+    "Manny",
+    "Pine/JP",
+    "Eddie",
+    "Nathan/Arquime",
+    "Alex",
+    "Richard"
+  ]
+}
