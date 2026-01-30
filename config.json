@@ -4,15 +4,15 @@
   "tasks": [
     {
       "id": "recycling_deliver",
-      "name": "Recycling/Compost (Deliver)",
-      "description": "Takes the compost bin (Green bin) out to the curb on Sunday Night. Takes recycling bins (Blue Bins) out to the curb on Monday Night.",
-      "schedule": "Sunday Night / Monday Night"
+      "name": "Compost",
+      "description": "Takes the compost bin (Green bin) out to the curb Sunday night and brings it back Monday morning.",
+      "schedule": "Sunday Night / Monday Morning"
     },
     {
       "id": "recycling_return",
-      "name": "Recycling/Compost (Return)",
-      "description": "Takes compost bin (Green bin) from the curb back to rightside of the porch Monday morning. Takes recycling bins (Blue Bins) from the curb next to dumpster at back entrance Tuesday morning.",
-      "schedule": "Monday Morning / Tuesday Morning"
+      "name": "Recycling",
+      "description": "Takes the recycling bins (Blue bins) out to the curb Monday night and brings them back Tuesday morning.",
+      "schedule": "Monday Night / Tuesday Morning"
     },
     {
       "id": "kitchen_trash",
@@ -27,10 +27,10 @@
       "schedule": "Sunday and Thursday"
     },
     {
-      "id": "doors_compost",
-      "name": "Locked Doors & Compost",
-      "description": "Make sure all doors are locked before going to bed and throws away 2 black compost bags from the backyard.",
-      "schedule": "Every night 11PM + Sat Night"
+      "id": "locked_doors",
+      "name": "Locked Doors",
+      "description": "Make sure all doors are locked before going to bed.",
+      "schedule": "Every night at 11PM"
     }
   ],
   "assignees": [

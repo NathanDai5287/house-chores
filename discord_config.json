@@ -1,0 +1,36 @@
+{
+  "bot_token_env": "CHORES_BOT_TOKEN",
+  "channels": {
+    "test": 1466301370750468290,
+    "production": 1466315257277317180
+  },
+  "active_channels": ["test", "production"],
+  "user_ids": {
+    "Charles/Thompson": [199774104172101642, 1048435815329570847],
+    "Manny": [852694136833572884],
+    "Pine/JP": [487945765889769472, 366789598199676930],
+    "Eddie": [617238335768756235],
+    "Nathan/Arquime": [709572266060415066, 993363870607474688],
+    "Alex": [1346289533851009045],
+    "Richard": [192509206463643648]
+  },
+  "reminders": {
+    "recycling_deliver": [
+      {"day": "Sunday", "hour": 20, "message": "Take the 🟩 compost bin to the curb tonight"},
+      {"day": "Monday", "hour": 20, "message": "Take the 🟦 recycling bins to the curb tonight"}
+    ],
+    "recycling_return": [
+      {"day": "Monday", "hour": 8, "message": "Bring the 🟩 compost bin back to the porch"},
+      {"day": "Tuesday", "hour": 8, "message": "Bring the 🟦 recycling bins back to the dumpster area"}
+    ],
+    "locked_doors": [
+      {"day": "Monday", "hour": 23, "message": "Check all doors are locked before bed", "proof": "Send pictures for all 3 doors"},
+      {"day": "Tuesday", "hour": 23, "message": "Check all doors are locked before bed", "proof": "Send pictures for all 3 doors"},
+      {"day": "Wednesday", "hour": 23, "message": "Check all doors are locked before bed", "proof": "Send pictures for all 3 doors"},
+      {"day": "Thursday", "hour": 23, "message": "Check all doors are locked before bed", "proof": "Send pictures for all 3 doors"},
+      {"day": "Friday", "hour": 23, "message": "Check all doors are locked before bed", "proof": "Send pictures for all 3 doors"},
+      {"day": "Saturday", "hour": 23, "message": "Check all doors are locked before bed", "proof": "Send pictures for all 3 doors"},
+      {"day": "Sunday", "hour": 23, "message": "Check all doors are locked before bed", "proof": "Send pictures for all 3 doors"}
+    ]
+  }
+}
