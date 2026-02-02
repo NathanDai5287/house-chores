@@ -22,6 +22,13 @@ CONFIG_PATH = Path(__file__).parent / "discord_config.json"
 SEED = 42
 HEALTH_PORT = int(os.environ.get("HEALTH_PORT", 8080))
 TIMEZONE = ZoneInfo("America/Los_Angeles")
+THREAD_NAME = "Proof of Completion"
+FOLLOWUP_MARKER = "this is a reminder"
+
+
+def today() -> datetime:
+    """Get today's date at midnight in local timezone (naive datetime)."""
+    return datetime.now(TIMEZONE).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -71,15 +78,13 @@ def get_week_for_date(target_date: datetime) -> dict | None:
 
 def get_current_week_assignments() -> dict:
     """Get assignments for the current week."""
-    today = datetime.now(TIMEZONE).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-    week, _ = get_week_for_date(today)
+    week, _ = get_week_for_date(today())
     return week["assignments"] if week else {}
 
 
 def get_next_week_assignments() -> dict:
     """Get assignments for the next week."""
-    today = datetime.now(TIMEZONE).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-    next_week = today + timedelta(days=7)
+    next_week = today() + timedelta(days=7)
     week, _ = get_week_for_date(next_week)
     return week["assignments"] if week else {}
 
@@ -109,6 +114,74 @@ class ChoresBot(discord.Client):
         except discord.HTTPException:
             pass
         return False
+
+    async def followup_already_sent(self, thread) -> bool:
+        """Check if we already sent a follow-up in this thread."""
+        async for message in thread.history(limit=20):
+            if message.author == self.user and FOLLOWUP_MARKER in message.content:
+                return True
+        return False
+
+    async def assigned_user_has_replied(self, thread, parent_message) -> bool:
+        """Check if the assigned user(s) have replied in the thread."""
+        assigned_user_ids = set(re.findall(r'<@(\d+)>', parent_message.content))
+        if not assigned_user_ids:
+            return True
+
+        async for message in thread.history(limit=50):
+            if str(message.author.id) in assigned_user_ids:
+                return True
+        return False
+
+    async def send_followup(self, thread, parent_message):
+        """Send a follow-up reminder in the thread."""
+        pings = re.findall(r'<@\d+>', parent_message.content)
+        ping_str = " ".join(pings) if pings else ""
+        await thread.send(f"{ping_str}, {FOLLOWUP_MARKER} to send image proof of completion")
+
+    async def check_threads_for_followup(self):
+        """Check 'Proof of Completion' threads and send follow-ups if needed."""
+        now = discord.utils.utcnow()
+        min_age = timedelta(hours=2)
+        max_age = timedelta(hours=3)  # 1-hour window prevents repeat checks
+
+        channels = self.discord_cfg.get("channels", {})
+        active = self.discord_cfg.get("active_channels", [])
+
+        for name in active:
+            channel_id = channels.get(name)
+            if not channel_id:
+                continue
+            channel = self.get_channel(channel_id)
+            if not channel:
+                continue
+
+            # Check both active and archived threads
+            all_threads = list(channel.threads)
+            async for archived in channel.archived_threads(limit=20):
+                all_threads.append(archived)
+
+            for thread in all_threads:
+                if thread.name != THREAD_NAME:
+                    continue
+
+                thread_age = now - thread.created_at
+                if not (min_age <= thread_age <= max_age):
+                    continue
+
+                # Fetch parent message once for both checks
+                try:
+                    parent_message = await thread.parent.fetch_message(thread.id)
+                except discord.NotFound:
+                    continue
+
+                if await self.followup_already_sent(thread):
+                    continue
+
+                if await self.assigned_user_has_replied(thread, parent_message):
+                    continue
+
+                await self.send_followup(thread, parent_message)
 
     async def setup_hook(self):
         self.reminder_loop.start()
@@ -153,7 +226,7 @@ Each reminder pings the assigned person and creates a
             table_format = "--table" in message.content
 
             # Parse week offset (e.g., +1w, -2w)
-            target_date = datetime.now(TIMEZONE).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+            target_date = today()
             week_match = re.search(r'([+-]\d+)w', message.content)
             if week_match:
                 weeks_offset = int(week_match.group(1))
@@ -240,8 +313,7 @@ Each reminder pings the assigned person and creates a
     async def send_weekly_schedule(self):
         """Send the weekly schedule to active channels."""
         # Get next week's schedule (since this runs Sunday evening, we want the upcoming Mon-Sun)
-        target_date = datetime.now(TIMEZONE).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-        target_date += timedelta(days=1)  # Move to Monday = next week
+        target_date = today() + timedelta(days=1)  # Move to Monday = next week
         week, tasks = get_week_for_date(target_date)
         if not week:
             return
@@ -294,58 +366,59 @@ Each reminder pings the assigned person and creates a
             await self.send_weekly_schedule()
 
         assignments = get_current_week_assignments()
-        if not assignments:
-            return
+        if assignments:
+            reminders = self.discord_cfg.get("reminders", {})
 
-        reminders = self.discord_cfg.get("reminders", {})
-
-        for task_id, task_reminders in reminders.items():
-            # Skip locked_doors for now - daily reminders would spam the channel
-            if task_id == "locked_doors":
-                continue
-
-            for reminder in task_reminders:
-                if reminder["day"] != day_name or reminder["hour"] != hour:
+            for task_id, task_reminders in reminders.items():
+                # Skip locked_doors for now - daily reminders would spam the channel
+                if task_id == "locked_doors":
                     continue
 
-                # Compost (Sunday out, Monday back): recycling_deliver person
-                # Recycling (Monday out, Tuesday back): recycling_return person
-                if task_id == "recycling_deliver":
-                    if day_name == "Sunday":
-                        # Compost out: next week's recycling_deliver
-                        next_assignments = get_next_week_assignments()
-                        assignee = next_assignments.get("recycling_deliver")
+                for reminder in task_reminders:
+                    if reminder["day"] != day_name or reminder["hour"] != hour:
+                        continue
+
+                    # Compost (Sunday out, Monday back): recycling_deliver person
+                    # Recycling (Monday out, Tuesday back): recycling_return person
+                    if task_id == "recycling_deliver":
+                        if day_name == "Sunday":
+                            # Compost out: next week's recycling_deliver
+                            next_assignments = get_next_week_assignments()
+                            assignee = next_assignments.get("recycling_deliver")
+                        else:
+                            # Recycling out (Monday): recycling_return person
+                            assignee = assignments.get("recycling_return")
+                    elif task_id == "recycling_return":
+                        if day_name == "Monday":
+                            # Compost back: current week's recycling_deliver
+                            assignee = assignments.get("recycling_deliver")
+                        else:
+                            # Recycling back (Tuesday): recycling_return person
+                            assignee = assignments.get("recycling_return")
                     else:
-                        # Recycling out (Monday): recycling_return person
-                        assignee = assignments.get("recycling_return")
-                elif task_id == "recycling_return":
-                    if day_name == "Monday":
-                        # Compost back: current week's recycling_deliver
-                        assignee = assignments.get("recycling_deliver")
-                    else:
-                        # Recycling back (Tuesday): recycling_return person
-                        assignee = assignments.get("recycling_return")
-                else:
-                    assignee = assignments.get(task_id)
+                        assignee = assignments.get(task_id)
 
-                if not assignee:
-                    continue
+                    if not assignee:
+                        continue
 
-                ping = format_ping(assignee, self.discord_cfg)
-                msg = f"{ping} {reminder['message']}"
-                proof_msg = reminder.get("proof", "Send image proof upon completion")
+                    ping = format_ping(assignee, self.discord_cfg)
+                    msg = f"{ping} {reminder['message']}"
+                    proof_msg = reminder.get("proof", "Send image proof upon completion")
 
-                for name in active:
-                    channel_id = channels.get(name)
-                    if channel_id:
-                        channel = self.get_channel(channel_id)
-                        if channel:
-                            # Check if already sent this reminder recently
-                            if await self.was_recently_sent(channel, reminder["message"]):
-                                continue
-                            sent_msg = await channel.send(msg)
-                            thread = await sent_msg.create_thread(name="Proof of Completion")
-                            await thread.send(proof_msg)
+                    for name in active:
+                        channel_id = channels.get(name)
+                        if channel_id:
+                            channel = self.get_channel(channel_id)
+                            if channel:
+                                # Check if already sent this reminder recently
+                                if await self.was_recently_sent(channel, reminder["message"]):
+                                    continue
+                                sent_msg = await channel.send(msg)
+                                thread = await sent_msg.create_thread(name=THREAD_NAME)
+                                await thread.send(proof_msg)
+
+        # Check for threads needing follow-up reminders
+        await self.check_threads_for_followup()
 
     @reminder_loop.before_loop
     async def before_reminder_loop(self):
