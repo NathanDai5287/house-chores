@@ -22,7 +22,6 @@ CONFIG_PATH = Path(__file__).parent / "discord_config.json"
 SEED = 42
 HEALTH_PORT = int(os.environ.get("HEALTH_PORT", 8080))
 TIMEZONE = ZoneInfo("America/Los_Angeles")
-THREAD_NAME = "Proof of Completion"
 FOLLOWUP_MARKER = "this is a reminder"
 
 
@@ -80,6 +79,15 @@ def get_current_week_assignments() -> dict:
     """Get assignments for the current week."""
     week, _ = get_week_for_date(today())
     return week["assignments"] if week else {}
+
+
+def get_task_name(task_id: str) -> str:
+    """Get task name from task ID."""
+    _, tasks = get_schedule()
+    for task in tasks:
+        if task["id"] == task_id:
+            return task["name"]
+    return task_id  # Fallback to ID if not found
 
 
 def get_next_week_assignments() -> dict:
@@ -140,7 +148,7 @@ class ChoresBot(discord.Client):
         await thread.send(f"{ping_str}, {FOLLOWUP_MARKER} to send image proof of completion")
 
     async def check_threads_for_followup(self):
-        """Check 'Proof of Completion' threads and send follow-ups if needed."""
+        """Check proof threads and send follow-ups if needed."""
         now = discord.utils.utcnow()
         min_age = timedelta(hours=2)
         max_age = timedelta(hours=3)  # 1-hour window prevents repeat checks
@@ -162,17 +170,18 @@ class ChoresBot(discord.Client):
                 all_threads.append(archived)
 
             for thread in all_threads:
-                if thread.name != THREAD_NAME:
-                    continue
-
                 thread_age = now - thread.created_at
                 if not (min_age <= thread_age <= max_age):
                     continue
 
-                # Fetch parent message once for both checks
+                # Fetch parent message to check if it's a bot reminder thread
                 try:
                     parent_message = await thread.parent.fetch_message(thread.id)
                 except discord.NotFound:
+                    continue
+
+                # Only process threads created from bot messages
+                if parent_message.author != self.user:
                     continue
 
                 if await self.followup_already_sent(thread):
@@ -414,7 +423,8 @@ Each reminder pings the assigned person and creates a
                                 if await self.was_recently_sent(channel, reminder["message"]):
                                     continue
                                 sent_msg = await channel.send(msg)
-                                thread = await sent_msg.create_thread(name=THREAD_NAME)
+                                thread_name = get_task_name(task_id)
+                                thread = await sent_msg.create_thread(name=thread_name)
                                 await thread.send(proof_msg)
 
         # Check for threads needing follow-up reminders
