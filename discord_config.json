@@ -23,6 +23,10 @@
       {"day": "Monday", "hour": 8, "message": "Bring the 🟩 compost bin back to the porch"},
       {"day": "Tuesday", "hour": 8, "message": "Bring the 🟦 recycling bins back to the dumpster area"}
     ],
+    "dishes": [
+      {"day": "Sunday", "hour": 18, "message": "Put away the dry dishes from the rack 🍽️", "proof": "Send a photo of the empty dish rack"},
+      {"day": "Thursday", "hour": 18, "message": "Put away the dry dishes from the rack 🍽️", "proof": "Send a photo of the empty dish rack"}
+    ],
     "locked_doors": [
       {"day": "Monday", "hour": 23, "message": "Check all doors are locked before bed", "proof": "Send pictures for all 3 doors"},
       {"day": "Tuesday", "hour": 23, "message": "Check all doors are locked before bed", "proof": "Send pictures for all 3 doors"},
