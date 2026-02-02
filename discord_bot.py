@@ -234,6 +234,10 @@ COMMANDS
 AUTOMATED REMINDERS (California Time)
   Sunday 6pm     Weekly schedule posted
 
+  Dishrack:
+    Sunday 6pm   Put away dishes
+    Thursday 6pm Put away dishes
+
   Compost:
     Sunday 8pm   Take out
     Monday 8am   Bring back

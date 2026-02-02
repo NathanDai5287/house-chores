@@ -23,7 +23,7 @@
       {"day": "Monday", "hour": 8, "message": "Bring the 🟩 compost bin back to the porch"},
       {"day": "Tuesday", "hour": 8, "message": "Bring the 🟦 recycling bins back to the dumpster area"}
     ],
-    "dishes": [
+    "dishrack": [
       {"day": "Sunday", "hour": 18, "message": "Put away the dry dishes from the rack 🍽️", "proof": "Send a photo of the empty dish rack"},
       {"day": "Thursday", "hour": 18, "message": "Put away the dry dishes from the rack 🍽️", "proof": "Send a photo of the empty dish rack"}
     ],
