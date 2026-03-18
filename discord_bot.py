@@ -8,12 +8,10 @@ import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from threading import Thread
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 import discord
-from http.server import HTTPServer, BaseHTTPRequestHandler
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -21,7 +19,6 @@ from house_chores import load_config, get_week_ranges, assign_tasks_fairly
 
 CONFIG_PATH = Path(__file__).parent / "discord_config.json"
 SEED = 42
-HEALTH_PORT = int(os.environ.get("HEALTH_PORT", 8080))
 TIMEZONE = ZoneInfo("America/Los_Angeles")
 FOLLOWUP_MARKER = "this is a reminder"
 
@@ -29,22 +26,6 @@ FOLLOWUP_MARKER = "this is a reminder"
 def today() -> datetime:
     """Get today's date at midnight in local timezone (naive datetime)."""
     return datetime.now(TIMEZONE).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-
-
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"OK")
-
-    def log_message(self, format, *args):
-        pass  # Suppress logs
-
-
-def start_health_server():
-    server = HTTPServer(("0.0.0.0", HEALTH_PORT), HealthHandler)
-    server.serve_forever()
 
 
 def load_discord_config() -> dict:
@@ -447,11 +428,6 @@ def main():
         if not token:
             print(f"Error: Set bot_token in discord_config.json or {token_env} env var")
             return 1
-
-    # Start health check server in background
-    health_thread = Thread(target=start_health_server, daemon=True)
-    health_thread.start()
-    print(f"Health server running on port {HEALTH_PORT}")
 
     backoff = 5
     while True:
