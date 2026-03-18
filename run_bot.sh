@@ -12,4 +12,4 @@ source venv/bin/activate
 pip install -q discord.py python-dotenv
 
 # Run the bot
-python discord_bot.py
+python -u discord_bot.py
