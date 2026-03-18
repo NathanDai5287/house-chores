@@ -47,7 +47,7 @@ def start_health_server():
 
 
 def load_discord_config() -> dict:
-    with open(CONFIG_PATH) as f:
+    with open(CONFIG_PATH, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -220,6 +220,7 @@ class ChoresBot(discord.Client):
             return
 
         if message.content == "!help" or self.user in message.mentions:
+            print(f"[{datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}] {message.author} in #{message.channel}: {message.content!r}")
             help_text = """```
 HOUSE CHORES BOT
 ================
@@ -252,6 +253,7 @@ thread (named after the task) for photo verification.
             await message.channel.send(help_text)
 
         elif message.content.startswith("!chores"):
+            print(f"[{datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}] {message.author} in #{message.channel}: {message.content!r}")
             loud_ping = "--ping" in message.content
             table_format = "--table" in message.content
 
