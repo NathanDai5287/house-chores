@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Discord bot for house chores reminders."""
 
+import asyncio
 import json
 import os
 import re
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Thread
@@ -14,7 +16,6 @@ import discord
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 load_dotenv(Path(__file__).parent / ".env")
-from discord.ext import tasks
 
 from house_chores import load_config, get_week_ranges, assign_tasks_fairly
 
@@ -210,7 +211,18 @@ class ChoresBot(discord.Client):
                 await self.send_followup(thread, parent_message)
 
     async def setup_hook(self):
-        self.reminder_loop.start()
+        asyncio.create_task(self._watchdog_reminder_loop())
+
+    async def _watchdog_reminder_loop(self):
+        """Restart reminder_loop if it ever exits unexpectedly."""
+        while not self.is_closed():
+            try:
+                await self.reminder_loop()
+            except asyncio.CancelledError:
+                break  # Bot is shutting down — exit cleanly
+            except Exception as e:
+                print(f"[watchdog] reminder_loop crashed: {e}, restarting in 5s")
+                await asyncio.sleep(5)
 
     async def on_ready(self):
         print(f"Bot ready: {self.user}")
@@ -318,8 +330,8 @@ thread (named after the task) for photo verification.
 
             for task in tasks:
                 assignee = week["assignments"].get(task["id"], "?")
-                ping = format_ping(assignee, self.discord_cfg)
-                lines.append(f"**{task['name']}** — {ping}")
+                mention = format_ping(assignee, self.discord_cfg)
+                lines.append(f"**{task['name']}** — {mention}")
                 lines.append(f"└─ {task['schedule']}")
                 lines.append(f"> {task['description']}")
                 lines.append("")
@@ -348,71 +360,80 @@ thread (named after the task) for photo verification.
 
             await self.send_and_pin(channel, content)
 
-    @tasks.loop(minutes=1)
     async def reminder_loop(self):
-        """Check every minute if we need to send a reminder."""
-        now = datetime.now(TIMEZONE)
-        day_name = now.strftime("%A")
-        hour = now.hour
+        """Check every minute if we need to send a reminder.
 
-        # Sunday 6pm - send weekly schedule
-        if day_name == "Sunday" and hour == 18:
-            await self.send_weekly_schedule()
-
-        assignments = get_current_week_assignments()
-        if assignments:
-            next_assignments = get_next_week_assignments()
-            reminders = self.discord_cfg.get("reminders", {})
-
-            # Mapping: (task_id, day) -> (assignment_source, assignment_key)
-            # Compost (Sunday out, Monday back): recycling_deliver person
-            # Recycling (Monday out, Tuesday back): recycling_return person
-            ASSIGNEE_OVERRIDES = {
-                ("recycling_deliver", "Sunday"): ("next", "recycling_deliver"),   # Compost out
-                ("recycling_deliver", "Monday"): ("current", "recycling_return"), # Recycling out
-                ("recycling_return", "Monday"): ("current", "recycling_deliver"), # Compost back
-                ("recycling_return", "Tuesday"): ("current", "recycling_return"), # Recycling back
-            }
-
-            for task_id, task_reminders in reminders.items():
-                # Skip locked_doors for now - daily reminders would spam the channel
-                if task_id == "locked_doors":
-                    continue
-
-                for reminder in task_reminders:
-                    if reminder["day"] != day_name or reminder["hour"] != hour:
-                        continue
-
-                    key = (task_id, day_name)
-                    if key in ASSIGNEE_OVERRIDES:
-                        source, assign_key = ASSIGNEE_OVERRIDES[key]
-                        pool = next_assignments if source == "next" else assignments
-                        assignee = pool.get(assign_key)
-                    else:
-                        assignee = assignments.get(task_id)
-
-                    if not assignee:
-                        continue
-
-                    ping = format_ping(assignee, self.discord_cfg)
-                    msg = f"{ping} {reminder['message']}"
-                    proof_msg = reminder.get("proof", "Send image proof upon completion")
-
-                    for channel in self.iter_active_channels():
-                        # Check if already sent this reminder recently
-                        if await self.was_recently_sent(channel, reminder["message"]):
-                            continue
-                        sent_msg = await channel.send(msg)
-                        thread_name = get_task_name(task_id)
-                        thread = await sent_msg.create_thread(name=thread_name)
-                        await thread.send(proof_msg)
-
-        # Check for threads needing follow-up reminders
-        await self.check_threads_for_followup()
-
-    @reminder_loop.before_loop
-    async def before_reminder_loop(self):
+        Sleeps until the next wall-clock minute boundary on each iteration so
+        drift never accumulates — contrast with asyncio.sleep(60) which drifts
+        by however long the loop body takes, compounding over days/weeks.
+        """
         await self.wait_until_ready()
+        while not self.is_closed():
+            now = datetime.now(TIMEZONE)
+            seconds_until_next_minute = 60 - now.second - now.microsecond / 1_000_000
+            await asyncio.sleep(seconds_until_next_minute)
+
+            try:
+                now = datetime.now(TIMEZONE)
+                day_name = now.strftime("%A")
+                hour = now.hour
+
+                # Sunday 6pm - send weekly schedule
+                if day_name == "Sunday" and hour == 18:
+                    await self.send_weekly_schedule()
+
+                assignments = get_current_week_assignments()
+                if assignments:
+                    next_assignments = get_next_week_assignments()
+                    reminders = self.discord_cfg.get("reminders", {})
+
+                    # Mapping: (task_id, day) -> (assignment_source, assignment_key)
+                    # Compost (Sunday out, Monday back): recycling_deliver person
+                    # Recycling (Monday out, Tuesday back): recycling_return person
+                    ASSIGNEE_OVERRIDES = {
+                        ("recycling_deliver", "Sunday"): ("next", "recycling_deliver"),   # Compost out
+                        ("recycling_deliver", "Monday"): ("current", "recycling_return"), # Recycling out
+                        ("recycling_return", "Monday"): ("current", "recycling_deliver"), # Compost back
+                        ("recycling_return", "Tuesday"): ("current", "recycling_return"), # Recycling back
+                    }
+
+                    for task_id, task_reminders in reminders.items():
+                        # Skip locked_doors for now - daily reminders would spam the channel
+                        if task_id == "locked_doors":
+                            continue
+
+                        for reminder in task_reminders:
+                            if reminder["day"] != day_name or reminder["hour"] != hour:
+                                continue
+
+                            key = (task_id, day_name)
+                            if key in ASSIGNEE_OVERRIDES:
+                                source, assign_key = ASSIGNEE_OVERRIDES[key]
+                                pool = next_assignments if source == "next" else assignments
+                                assignee = pool.get(assign_key)
+                            else:
+                                assignee = assignments.get(task_id)
+
+                            if not assignee:
+                                continue
+
+                            ping = format_ping(assignee, self.discord_cfg)
+                            msg = f"{ping} {reminder['message']}"
+                            proof_msg = reminder.get("proof", "Send image proof upon completion")
+
+                            for channel in self.iter_active_channels():
+                                # Check if already sent this reminder recently
+                                if await self.was_recently_sent(channel, reminder["message"]):
+                                    continue
+                                sent_msg = await channel.send(msg)
+                                thread_name = get_task_name(task_id)
+                                thread = await sent_msg.create_thread(name=thread_name)
+                                await thread.send(proof_msg)
+
+                # Check for threads needing follow-up reminders
+                await self.check_threads_for_followup()
+            except Exception as e:
+                print(f"[reminder_loop] error (will retry next minute): {e}")
 
 
 def main():
@@ -432,9 +453,19 @@ def main():
     health_thread.start()
     print(f"Health server running on port {HEALTH_PORT}")
 
-    bot = ChoresBot()
-    bot.run(token)
-    return 0
+    backoff = 5
+    while True:
+        try:
+            bot = ChoresBot()
+            bot.run(token)
+            return 0  # Clean shutdown (e.g. Ctrl-C)
+        except discord.LoginFailure:
+            print("Login failed — invalid token, not retrying")
+            return 1
+        except Exception as e:
+            print(f"Bot crashed: {e!r}, restarting in {backoff}s")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)  # cap at 5 minutes
 
 
 if __name__ == "__main__":

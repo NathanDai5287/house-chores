@@ -1,0 +1,17 @@
+[Unit]
+Description=House Chores Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=natha
+WorkingDirectory=/home/natha/Programming/house-chores
+ExecStart=/bin/bash /home/natha/Programming/house-chores/run_bot.sh
+Restart=always
+RestartSec=10
+
+# Logs go to journald — view with: journalctl -u house-chores-bot -f
+
+[Install]
+WantedBy=multi-user.target
