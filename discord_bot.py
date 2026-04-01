@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 import discord
+from discord import app_commands
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -93,6 +94,8 @@ class ChoresBot(discord.Client):
         intents.message_content = True
         super().__init__(intents=intents)
         self.discord_cfg = load_discord_config()
+        self.tree = app_commands.CommandTree(self)
+        self._register_commands()
 
     async def send_and_pin(self, channel, content):
         """Unpin previous bot messages, send new message, and pin it."""
@@ -191,39 +194,83 @@ class ChoresBot(discord.Client):
 
                 await self.send_followup(thread, parent_message)
 
-    async def setup_hook(self):
-        asyncio.create_task(self._watchdog_reminder_loop())
+    def _register_commands(self):
+        """Register slash commands on the command tree."""
 
-    async def _watchdog_reminder_loop(self):
-        """Restart reminder_loop if it ever exits unexpectedly."""
-        while not self.is_closed():
-            try:
-                await self.reminder_loop()
-            except asyncio.CancelledError:
-                break  # Bot is shutting down — exit cleanly
-            except Exception as e:
-                print(f"[watchdog] reminder_loop crashed: {e}, restarting in 5s")
-                await asyncio.sleep(5)
+        @self.tree.command(name="chores", description="Show weekly chore assignments")
+        @app_commands.describe(
+            week="Week offset (e.g. -1 for last week, 1 for next week)",
+            ping="Ping everyone and pin the message in the channel",
+            table="Use compact table format",
+        )
+        async def chores(
+            interaction: discord.Interaction,
+            week: int = 0,
+            ping: bool = False,
+            table: bool = False,
+        ):
+            print(f"[{datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}] {interaction.user} in #{interaction.channel}: /chores week={week} ping={ping} table={table}")
 
-    async def on_ready(self):
-        print(f"Bot ready: {self.user}")
+            target_date = today()
+            # On Sunday, treat as start of next week (matches the weekly auto-post)
+            if target_date.weekday() == 6:
+                target_date += timedelta(days=1)
+            target_date += timedelta(weeks=week)
+            week_data, tasks = get_week_for_date(target_date)
+            if not week_data:
+                await interaction.response.send_message("No schedule for that week.", ephemeral=True)
+                return
 
-    async def on_message(self, message):
-        if message.author == self.user:
-            return
+            content = self.format_weekly_schedule(week_data, tasks, table=table, ping=ping)
 
-        if message.content == "!help" or self.user in message.mentions:
-            print(f"[{datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}] {message.author} in #{message.channel}: {message.content!r}")
+            if not ping:
+                content += "\n_Run `/chores ping:True` to ping everyone with notification_"
+                await interaction.response.send_message(content, silent=True)
+            else:
+                await interaction.response.send_message(content)
+                sent_msg = await interaction.original_response()
+                # Pin logic: unpin old bot pins, pin new one
+                try:
+                    pins = await interaction.channel.pins()
+                    for pin in pins:
+                        if pin.author == self.user:
+                            await pin.unpin()
+                except discord.HTTPException:
+                    pass
+                try:
+                    await sent_msg.pin()
+                except discord.HTTPException:
+                    pass
+
+        @self.tree.command(name="trash", description="Ping the person responsible for kitchen trash")
+        async def trash(interaction: discord.Interaction):
+            print(f"[{datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}] {interaction.user} in #{interaction.channel}: /trash")
+            assignments = get_current_week_assignments()
+            assignee = assignments.get("kitchen_trash")
+            if not assignee:
+                await interaction.response.send_message("No kitchen trash assignment found for this week.", ephemeral=True)
+                return
+            ping = format_ping(assignee, self.discord_cfg)
+            await interaction.response.send_message("Sending ping...", ephemeral=True)
+            await interaction.channel.send(f"{ping} the kitchen trash is full! Please take it out and replace the bag 🗑️")
+
+        @self.tree.command(name="help", description="Show bot help and reminder schedule")
+        async def help_cmd(interaction: discord.Interaction):
+            print(f"[{datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}] {interaction.user} in #{interaction.channel}: /help")
             help_text = """```
 HOUSE CHORES BOT
 ================
 
 COMMANDS
-  !chores [+-Nw] [--ping] [--table]
+  /chores [week:N] [ping:True] [table:True]
                      Shows week's assignments
-                     -1w: previous week, +1w: next week
-                     --ping: loud ping, posts in channel
-                     --table: compact table format
+                     week:-1 previous, week:1 next
+                     ping:True loud ping, pins in channel
+                     table:True compact table format
+
+  /trash             Ping this week's kitchen trash person
+
+  /help              Show this help message
 
 AUTOMATED REMINDERS (California Time)
   Sunday 6pm     Weekly schedule posted
@@ -243,37 +290,35 @@ AUTOMATED REMINDERS (California Time)
 Each reminder pings the assigned person and creates a
 thread (named after the task) for photo verification.
 ```"""
-            await message.channel.send(help_text)
+            await interaction.response.send_message(help_text, ephemeral=True)
 
-        elif message.content.startswith("!chores"):
+    async def setup_hook(self):
+        await self.tree.sync()
+        print("Slash commands synced")
+        asyncio.create_task(self._watchdog_reminder_loop())
+
+    async def _watchdog_reminder_loop(self):
+        """Restart reminder_loop if it ever exits unexpectedly."""
+        while not self.is_closed():
+            try:
+                await self.reminder_loop()
+            except asyncio.CancelledError:
+                break  # Bot is shutting down — exit cleanly
+            except Exception as e:
+                print(f"[watchdog] reminder_loop crashed: {e}, restarting in 5s")
+                await asyncio.sleep(5)
+
+    async def on_ready(self):
+        print(f"Bot ready: {self.user}")
+
+    async def on_message(self, message):
+        """Handle non-command messages (e.g. @mentions)."""
+        if message.author == self.user:
+            return
+
+        if self.user in message.mentions:
             print(f"[{datetime.now(TIMEZONE).strftime('%Y-%m-%d %H:%M:%S')}] {message.author} in #{message.channel}: {message.content!r}")
-            loud_ping = "--ping" in message.content
-            table_format = "--table" in message.content
-
-            # Parse week offset (e.g., +1w, -2w)
-            target_date = today()
-            week_match = re.search(r'([+-]\d+)w', message.content)
-            if week_match:
-                weeks_offset = int(week_match.group(1))
-                target_date += timedelta(weeks=weeks_offset)
-
-            week, tasks = get_week_for_date(target_date)
-            if not week:
-                await message.channel.send("No schedule for that week.")
-                return
-
-            content = self.format_weekly_schedule(week, tasks, table=table_format, ping=loud_ping)
-
-            if not loud_ping:
-                content += "\n_Run !chores --ping to ping everyone with notification_"
-                # Reply in thread to keep channel clean
-                try:
-                    thread = await message.create_thread(name=f"Week {week['week_num']} Chores")
-                    await thread.send(content, silent=True)
-                except discord.HTTPException:
-                    await message.channel.send(content, silent=True)
-            else:
-                await self.send_and_pin(message.channel, content)
+            await message.channel.send("Use `/chores` to see this week's assignments or `/help` for all commands.")
 
     def format_weekly_schedule(self, week, tasks, table=False, ping=False):
         """Format the weekly schedule message."""

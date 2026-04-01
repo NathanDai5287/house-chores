@@ -28,13 +28,17 @@ sudo systemctl stop house-chores-bot     # stop
 
 The bot starts automatically on boot and restarts itself if it crashes.
 
-## Bot Commands
+## Slash Commands
 
-- `!chores` — show this week's assignments
-- `!chores -1w` / `!chores +1w` — previous/next week
-- `!chores --ping` — post in channel and ping everyone
-- `!chores --table` — compact table format
-- `!help` — show help in Discord
+| Command | Description |
+|---------|-------------|
+| `/chores` | Show this week's chore assignments |
+| `/chores week:-1` | Show last week's assignments |
+| `/chores week:1` | Show next week's assignments |
+| `/chores ping:True` | Post and ping everyone (pins the message) |
+| `/chores table:True` | Use compact table format |
+| `/chores week:1 ping:True table:True` | Combine options |
+| `/help` | Show help and reminder schedule |
 
 ## Automated Reminders (California Time)
 
